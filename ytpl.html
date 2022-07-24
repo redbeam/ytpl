@@ -1,0 +1,329 @@
+<!--
+YouTube Playlist Manager
+redbeam_, 2021
+
+version 1.5
+
+python -m http.server 8000
+-->
+<!DOCTYPE html>
+<style>
+    * {
+        box-sizing: border-box;
+    }
+
+    body {
+        margin: 0;
+    }
+
+    img {
+        vertical-align: bottom;
+    }
+
+    table#videos {
+        width: 100%;
+        border-spacing: 4px 6px;
+        border-collapse: collapse;
+    }
+
+    table#videos td {
+        white-space: nowrap;
+        border: 2px solid black;
+    }
+
+    table#videos td:last-child {  /* last column in the video table */
+        position: relative;
+        width: 100%;
+        padding-inline: 10px;
+    }
+
+    div#playlist-select {
+        overflow: auto;
+        max-height: 75%;
+        white-space: nowrap;
+        margin-top: 10px;
+        font-size: 110%;
+    }
+
+    div#panel {
+        overflow: auto;
+        max-height: 100vh;
+        float: left;
+        width: 20%;
+        height: 100vh;
+        padding: 10px;
+        background-color: #4E8AFF;
+    }
+
+    div#video-section {
+        overflow: auto;
+        float: left;
+        width: 80%;
+        height: 100vh;
+        padding: 10px;
+        background-color: #7AA7FF;
+        outline: none;
+    }
+
+    p.videotitle {
+        margin: 0px;
+        font-size: 110%;
+    }
+
+    p.videoauthor {
+        position: absolute;
+        margin: 3px 0px 0px 0px;
+        font-size: 80%;
+    }
+</style>
+
+<title>YouTube Playlist Manager</title>
+<base target="_blank">
+
+<body>
+    <div id="panel">
+        <span id="logged-in-as">Not logged in</span>
+        &nbsp;
+        <button onclick="GoogleAuth.signOut()">Log out</button>
+        <br>
+        <div id="playlist-select"></div>
+    </div>
+
+    <div id="video-section" tabindex="0">
+        <table id="videos"></table>
+    </div>
+</body>
+
+<script src="https://apis.google.com/js/api.js"></script>
+<script>
+    "use strict";
+
+    var loggedInAsSpan = document.getElementById("logged-in-as");
+    var playlistSelectDiv = document.getElementById("playlist-select");
+    var videoSectionDiv = document.getElementById("video-section");
+    var videosTable = document.getElementById("videos");
+
+    var GoogleAuth;
+
+    var playlist = [];
+    var currentPlaylistId = "";
+    var lastScrollTop = 0;
+
+
+    function initClient() {
+        gapi.client.init({
+            "apiKey": "AIzaSyAD0gBUo6_LMIIu3vQahuHRLR-sd1k9rUU",
+            "clientId": "355524614417-afqng1pok30gtbob7j1ik2e20ef4d0k9.apps.googleusercontent.com",
+            "scope": "https://www.googleapis.com/auth/youtube.force-ssl",
+            "discoveryDocs": ["https://www.googleapis.com/discovery/v1/apis/youtube/v3/rest"]
+        })
+        .then(function () {
+            GoogleAuth = gapi.auth2.getAuthInstance();
+            GoogleAuth.isSignedIn.listen(_ => window.location.reload());
+
+            if ( ! GoogleAuth.isSignedIn.get()) {
+                GoogleAuth.signIn();
+                console.log("Not logged in; refresh required");
+                return;
+            }
+
+            console.log("Client initialised");
+            main();
+        });
+    }
+
+
+    function execute_channelList(responseHandler) {
+        gapi.client.youtube.channels.list({
+            "part": ["snippet"],
+            "maxResults": 50,
+            "mine": true
+        }).then(responseHandler, function(err) {console.error("execute_channelList error", err); alert("Error encountered; please check the console");});
+    }
+
+    function execute_list(responseHandler) {
+        gapi.client.youtube.playlists.list({
+            "part": ["snippet"],
+            "maxResults": 50,
+            "mine": true
+        }).then(responseHandler, function(err) {console.error("execute_list error", err); alert("Error encountered; please check the console");});
+    }
+
+    function execute_playlistItems(responseHandler, playlistId, pageToken="") {
+        gapi.client.youtube.playlistItems.list({
+            "part": ["snippet"],
+            "maxResults": 50,
+            "playlistId": playlistId,
+            "pageToken": pageToken
+        }).then(responseHandler, function(err) {console.error("execute_playlistItems error", err); alert("Error encountered; please check the console");});
+    }
+
+    function execute_update(responseHandler, playlistItemId, playlistId, position, videoId) {
+        gapi.client.youtube.playlistItems.update({
+            "part": ["snippet"],
+            "resource": {
+                "id": playlistItemId,
+                "snippet": {
+                    "playlistId": playlistId,
+                    "position": position,
+                    "resourceId": {
+                        "kind": "youtube#video",
+                        "videoId": videoId
+                    }
+                }
+            }
+        }).then(responseHandler, function(err) {console.error("execute_update error", err); alert("Error encountered; please check the console");});
+    }
+
+    function execute_delete(responseHandler, playlistItemId) {
+        gapi.client.youtube.playlistItems.delete({
+            "id": playlistItemId
+        }).then(responseHandler, function(err) {console.error("execute_delete error", err); alert("Error encountered; please check the console");});
+    }
+
+
+
+    function getChannelTitle() {
+        function respHandler(response) {
+            loggedInAsSpan.innerHTML = `Logged in as: <b>${response.result.items[0].snippet.title}</b>`;
+        }
+        execute_channelList(respHandler);
+    }
+
+    function populatePlaylistSelect() {
+        function respHandler(response) {
+            playlistSelectDiv.replaceChildren();
+
+            let items = response.result.items;
+            items.sort((a, b) => a.snippet.title.localeCompare(b.snippet.title));
+            for (let i = 0; i < items.length; ++i) {
+                playlistSelectDiv.innerHTML +=
+                    `<input type="radio" name="playlist-select-radio" id="radio-${i}" onclick="document.title = '${items[i].snippet.title} | ${document.title}'; loadPlaylist('${items[i].id}')">
+                     <label for="radio-${i}">${items[i].snippet.title}</label><br>`;
+            }
+        }
+
+        execute_list(respHandler);
+    }
+
+    function createVideoElem(index) {
+        let element = document.createElement("tr");
+        element.id = `video-${index}`;
+
+        let td1 = document.createElement("td");
+        let posBox = document.createElement("input");
+        posBox.size = 4;
+        posBox.value = playlist[index].position;
+        posBox.onchange = event => changePos(playlist[index].position, event.target.value);
+        td1.appendChild(posBox);
+
+        let td2 = document.createElement("td");
+        let anchor = document.createElement("a");
+        anchor.href = `https://www.youtube.com/watch?v=${playlist[index].resourceId.videoId}`;
+        let image = document.createElement("img");
+        image.loading = "lazy";
+        image.width = 120;
+        image.height = 90;
+        // YouTube's link returns the correct image, but with a 404 error code (https://i.ytimg.com/img/no_thumbnail.jpg)
+        image.src = playlist[index].thumbnails?.default?.url ?? "https://pbs.twimg.com/media/EwT190HWYAwY12p.jpg";
+        anchor.appendChild(image);
+        td2.appendChild(anchor);
+
+        let td3 = document.createElement("td");
+        let title = document.createElement("p");
+        title.className = "videotitle";
+        title.textContent = playlist[index].title;
+        let author = document.createElement("p");
+        author.className = "videoauthor";
+        author.textContent = `Author: ${playlist[index].videoOwnerChannelTitle ?? "n/a"}`;
+        td3.appendChild(title);
+        td3.appendChild(author);
+
+        element.appendChild(td1);
+        element.appendChild(td2);
+        element.appendChild(td3);
+
+        return element;
+    }
+
+    function populateVideosTable() {
+        let videoListFragment = document.createDocumentFragment();
+        for (let i = 0; i < playlist.length; ++i) {
+            videoListFragment.appendChild(createVideoElem(i));
+        }
+        videosTable.replaceChildren(videoListFragment);
+    }
+
+    function loadPlaylist(playlistId) {
+        function respHandler(response) {
+            if (currentPlaylistId != playlistId) {
+                return;
+            }
+
+            var result = response.result;
+            playlist.push(...result.items);
+
+            if (result.nextPageToken != undefined) {
+               execute_playlistItems(respHandler, playlistId, result.nextPageToken);
+            } else {
+                playlist.forEach(x => x.snippet.playlistItemId = x.id);
+                playlist = playlist.map(x => x.snippet);
+                populateVideosTable();
+                videoSectionDiv.scrollTop = lastScrollTop;
+                videoSectionDiv.focus();
+            }
+        }
+
+        if (currentPlaylistId != playlistId) {
+            lastScrollTop = 0;
+        } else {
+            lastScrollTop = videoSectionDiv.scrollTop;  // remembers the last viewed position
+        }
+
+        playlist = [];
+        currentPlaylistId = playlistId;
+        execute_playlistItems(respHandler, playlistId);
+    }
+
+    function changePos(posFrom, posTo) {
+        if (posTo == "X") {
+            deleteVideo(posFrom);
+            return;
+        }
+
+        if ( ! /^[1-9][0-9]*$/.test(posTo) && ! /^[0]$/.test(posTo)) {
+            alert("Please input a valid number");
+            return;
+        }
+
+        if (parseInt(posTo) < 0 || parseInt(posTo) >= playlist.length) {
+            alert("Index not in range");
+            return;
+        }
+
+        if (posFrom == parseInt(posTo)) {
+            return;
+        }
+
+        if ( ! confirm(`Change position of video "${playlist[posFrom].title}" from ${posFrom} to ${posTo}?`)) {
+            return;
+        }
+
+        execute_update(_ => loadPlaylist(currentPlaylistId), playlist[posFrom].playlistItemId, currentPlaylistId, posTo, playlist[posFrom].resourceId.videoId);
+    }
+
+    function deleteVideo(position) {
+        if ( ! confirm(`Do you really want to delete the video "${playlist[position].title}" on position ${position}?`)) {
+            return;
+        }
+
+        execute_delete(_ => loadPlaylist(currentPlaylistId), playlist[position].playlistItemId);
+    }
+
+    function main() {
+        getChannelTitle();
+        populatePlaylistSelect();
+    }
+
+    gapi.load("client:auth2", initClient);  // calls main()
+</script>
