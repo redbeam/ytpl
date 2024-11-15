@@ -105,6 +105,8 @@ python -m http.server 8000
 
     var GoogleAuth;
 
+    var playlistsList = [];
+
     var playlist = [];
     var currentPlaylistId = "";
     var lastScrollTop = 0;
@@ -190,15 +192,22 @@ python -m http.server 8000
         execute_channelList(respHandler);
     }
 
+    function radioSelectPlaylist(radio) {
+        let playlistInfo = playlistsList[radio.dataset.radioId];
+        document.title = `${playlistInfo.title} | ${document.title}`;
+        loadPlaylist(playlistInfo.id);
+    }
+
     function populatePlaylistSelect() {
         function respHandler(response) {
-            playlistSelectDiv.replaceChildren();
+            playlistSelectDiv.replaceChildren();  // removes all children
 
             let items = response.result.items;
             items.sort((a, b) => a.snippet.title.localeCompare(b.snippet.title));
             for (let i = 0; i < items.length; ++i) {
+                playlistsList.push({id: items[i].id, title: items[i].snippet.title})
                 playlistSelectDiv.innerHTML +=
-                    `<input type="radio" name="playlist-select-radio" id="radio-${i}" onclick="document.title = '${items[i].snippet.title} | ${document.title}'; loadPlaylist('${items[i].id}')">
+                    `<input type="radio" name="playlist-select-radio" id="radio-${i}" data-radio-id="${i}" onclick="radioSelectPlaylist(this)">
                      <label for="radio-${i}">${items[i].snippet.title}</label><br>`;
             }
         }
