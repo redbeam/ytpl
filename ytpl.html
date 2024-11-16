@@ -129,7 +129,7 @@ python -m http.server 8000
                 return;
             }
 
-            console.log("Client initialised");
+            console.log("Client initialized");
             main();
         });
     }
@@ -194,7 +194,7 @@ python -m http.server 8000
 
     function radioSelectPlaylist(radio) {
         let playlistInfo = playlistsList[radio.dataset.radioId];
-        document.title = `${playlistInfo.title} | ${document.title}`;
+        document.title = playlistInfo.docTitle;
         loadPlaylist(playlistInfo.id);
     }
 
@@ -205,7 +205,7 @@ python -m http.server 8000
             let items = response.result.items;
             items.sort((a, b) => a.snippet.title.localeCompare(b.snippet.title));
             for (let i = 0; i < items.length; ++i) {
-                playlistsList.push({id: items[i].id, title: items[i].snippet.title})
+                playlistsList.push({id: items[i].id, docTitle: `${items[i].snippet.title} | ${document.title}`})
                 playlistSelectDiv.innerHTML +=
                     `<input type="radio" name="playlist-select-radio" id="radio-${i}" data-radio-id="${i}" onclick="radioSelectPlaylist(this)">
                      <label for="radio-${i}">${items[i].snippet.title}</label><br>`;
